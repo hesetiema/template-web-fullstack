@@ -30,7 +30,7 @@ spec:
       containers:
         - name: web
           # Image tag is patched by GitOps (Argo CD / kustomize). Never use :latest.
-          image: ghcr.io/your-org/template-web:0.0.0
+          image: gitea.meos.center/your-org/template-web-fullstack:0.0.0
           imagePullPolicy: IfNotPresent
           ports:
             - name: http

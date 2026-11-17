@@ -19,9 +19,9 @@ resources:
   - api-pdb.yaml
 
 images:
-  - name: ghcr.io/your-org/template-web
-    newName: ghcr.io/your-org/template-web
+  - name: gitea.meos.center/your-org/template-web-fullstack
+    newName: gitea.meos.center/your-org/template-web-fullstack
     newTag: "0.0.0"
-  - name: ghcr.io/your-org/template-web-api
-    newName: ghcr.io/your-org/template-web-api
+  - name: gitea.meos.center/your-org/template-web-fullstack-api
+    newName: gitea.meos.center/your-org/template-web-fullstack-api
     newTag: "0.0.0"

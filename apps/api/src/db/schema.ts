@@ -1,12 +1,12 @@
-import { pgTable, serial, varchar, timestamp } from "drizzle-orm/pg-core";
+import { pgTable, serial, varchar, boolean, timestamp } from "drizzle-orm/pg-core";
 
-// Example table — replace with your domain model.
-export const users = pgTable("users", {
+// Task board domain model. Each row is one todo item.
+export const tasks = pgTable("tasks", {
   id: serial("id").primaryKey(),
-  name: varchar("name", { length: 100 }).notNull(),
-  email: varchar("email", { length: 255 }).notNull().unique(),
+  title: varchar("title", { length: 200 }).notNull(),
+  completed: boolean("completed").notNull().default(false),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 });
 
-export type User = typeof users.$inferSelect;
-export type NewUser = typeof users.$inferInsert;
+export type Task = typeof tasks.$inferSelect;
+export type NewTask = typeof tasks.$inferInsert;

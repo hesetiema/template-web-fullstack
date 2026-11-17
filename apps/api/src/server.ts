@@ -1,6 +1,6 @@
 import { buildApp } from "./app";
 import { createDb } from "./db/client";
-import { createUserRepository } from "./db/repository";
+import { createTaskRepository } from "./db/repository";
 import { parseEnv } from "./env";
 
 async function main() {
@@ -8,7 +8,7 @@ async function main() {
   const { db, ping, close } = createDb(env.DATABASE_URL);
   const app = await buildApp({
     env,
-    users: createUserRepository(db),
+    tasks: createTaskRepository(db),
     checkReady: ping,
   });
 
