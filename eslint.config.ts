@@ -33,15 +33,19 @@ export default defineConfig([
     },
   },
 
-  // Browser globals for app source; Node globals for config/tooling files.
+  // Browser globals for the web app; Node globals for API source, configs and tests.
   {
-    files: ["apps/**/src/**/*.{ts,tsx,vue}"],
+    files: ["apps/web/src/**/*.{ts,tsx,vue}"],
     languageOptions: {
       globals: { ...globals.browser },
     },
   },
   {
-    files: ["**/*.config.{ts,js,mjs,cjs}", "**/*.{test,spec}.ts"],
+    files: [
+      "apps/api/src/**/*.ts",
+      "**/*.config.{ts,js,mjs,cjs}",
+      "**/*.{test,spec}.ts",
+    ],
     languageOptions: {
       globals: { ...globals.node },
     },

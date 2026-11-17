@@ -1,12 +1,61 @@
-# Local production-like preview of the built image.
-# Build from the repository root: docker compose -f deploy/docker-compose.yml up --build
+# Full-stack local stack: PostgreSQL + API + web (nginx).
+# Run from the repository root: docker compose -f deploy/docker-compose.yml up --build
 services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: template_web
+    ports:
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d template_web"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  api:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.api
+    environment:
+      NODE_ENV: production
+      PORT: "3000"
+      DATABASE_URL: postgres://postgres:postgres@db:5432/template_web
+      LOG_LEVEL: info
+      CORS_ORIGIN: http://localhost:8080
+      APP_VERSION: local
+      MIGRATIONS_DIR: /app/migrations
+    # Apply migrations before the server starts.
+    command: sh -c "node dist/migrate.js && node dist/server.js"
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    tmpfs:
+      - /tmp
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 256M
+
   web:
     build:
       context: ..
       dockerfile: deploy/Dockerfile
     ports:
       - "8080:8080"
+    depends_on:
+      - api
     restart: unless-stopped
     read_only: true
     security_opt:
@@ -21,3 +70,6 @@ services:
         limits:
           cpus: "0.5"
           memory: 256M
+
+volumes:
+  pgdata:

@@ -16,6 +16,22 @@ spec:
     - host: web.example.com
       http:
         paths:
+          # API paths route directly to the API service. Exact /api first so that
+          # the more specific rule wins over the SPA catch-all below.
+          - path: /api
+            pathType: Exact
+            backend:
+              service:
+                name: api
+                port:
+                  number: 3000
+          - path: /api/
+            pathType: Prefix
+            backend:
+              service:
+                name: api
+                port:
+                  number: 3000
           - path: /
             pathType: Prefix
             backend:

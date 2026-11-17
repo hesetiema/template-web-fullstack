@@ -18,6 +18,7 @@
     "typecheck": "turbo run typecheck",
     "test": "turbo run test",
     "test:e2e": "turbo run test:e2e",
+    "db:migrate": "turbo run db:migrate",
     "check": "turbo run lint typecheck test",
     "prepare": "husky"
   },
