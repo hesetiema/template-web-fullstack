@@ -1,0 +1,91 @@
+name: CD
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: cd-production
+  # Never cancel an in-flight deploy midway.
+  cancel-in-progress: false
+
+env:
+  HUSKY: 0
+  CI: true
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+permissions:
+  contents: write      # needed to commit the image tag back for GitOps
+  packages: write      # needed to push to GHCR
+
+jobs:
+  build-and-publish:
+    name: Build image & publish
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract image metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=sha,format=long
+            type=raw,value=latest
+
+      - name: Build and push image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./deploy/Dockerfile
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Update GitOps image tag
+        env:
+          # Short SHA is the immutable tag pushed above.
+          IMAGE_TAG: ${{ github.sha }}
+        working-directory: k8s
+        run: |
+          set -euo pipefail
+          SHORT_SHA="${IMAGE_TAG:0:7}"
+
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          # Patch the kustomize image tag to the newly published immutable tag.
+          # (Use `kustomize edit set image` locally if you prefer; sed keeps CI dependency-free.)
+          sed -i -E "s#(newTag: ).*#\1\"${SHORT_SHA}\"#" kustomization.yaml
+
+          git add kustomization.yaml
+          if git diff --cached --quiet; then
+            echo "No manifest change; nothing to commit."
+          else
+            git commit -m "chore(ci): deploy ${SHORT_SHA} [skip ci]"
+            git push
+          fi

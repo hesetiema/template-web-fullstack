@@ -1,0 +1,30 @@
+# Install this Application CR in the Argo CD control-plane cluster.
+# Argo CD pulls from this Git repo (GitOps): it reconciles `k8s/` to the cluster.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: template-web
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/your-org/template-web.git
+    targetRevision: main
+    path: k8s
+  destination:
+    # https://kubernetes.default.svc for an in-cluster deploy.
+    server: https://kubernetes.default.svc
+    namespace: template-web
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+      allowEmpty: false
+    syncOptions:
+      - CreateNamespace=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m

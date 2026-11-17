@@ -1,0 +1,16 @@
+node_modules
+**/node_modules
+.git
+.env
+.env.*
+dist
+**/dist
+coverage
+**/coverage
+.turbo
+playwright-report
+test-results
+*.log
+Dockerfile*
+docker-compose*.yml
+README.md

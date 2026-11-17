@@ -1,0 +1,9 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: template-web-config
+  namespace: template-web
+data:
+  APP_ENV: "production"
+  # Placeholder: point to your real API or set via kustomize overlay per environment.
+  VITE_API_BASE_URL: "/api"
