@@ -13,7 +13,7 @@ export default defineConfig(({ mode }) => {
       },
     },
     define: {
-      __APP_TITLE__: JSON.stringify(env.VITE_APP_TITLE ?? "template-web"),
+      __APP_TITLE__: JSON.stringify(env.VITE_APP_TITLE ?? "template-web-fullstack"),
     },
     test: {
       environment: "jsdom",

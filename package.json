@@ -1,5 +1,5 @@
 {
-  "name": "template-web",
+  "name": "template-web-fullstack",
   "version": "0.0.0",
   "private": true,
   "description": "Vue 3 + Vite + TypeScript web template with engineering, testing and delivery baselines.",

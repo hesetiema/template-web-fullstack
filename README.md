@@ -1,4 +1,4 @@
-# template-web
+# template-web-fullstack
 
 全栈 Web 工程模板：**Vue 3 + Vite 前端** + **Fastify + TypeScript API** + PostgreSQL，覆盖工程化、测试、容器化到 GitOps 交付的完整基线。
 
