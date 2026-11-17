@@ -1,0 +1,29 @@
+# Forgejo Runner config — mounted at /data/config.yml (read-only) in docker-compose.yml.
+# Generate your own with: docker run --rm data.forgejo.org/forgejo/runner:13 forgejo-runner generate-config
+#
+# BEFORE FIRST USE: replace the two REPLACE_ME values below.
+#   Get them from Forgejo UI: Settings -> Actions -> Runners -> Create new runner.
+#   The UI shows a `server.connections` snippet with url / uuid / token — paste them here.
+
+runner:
+  # One job at a time: this is an 8GB laptop, keep builds serial and predictable.
+  capacity: 1
+  # "local:host" declares the `local` label with host execution type. Workflows
+  # use `runs-on: local`, so jobs run directly inside this container where
+  # Node, pnpm, git and docker are all installed. No per-job image pull.
+  labels:
+    - "local:host"
+
+server:
+  connections:
+    forgejo:
+      # Container DNS name of the Forgejo service on the compose network.
+      url: http://forgejo:3000/
+      uuid: REPLACE_ME_RUNNER_UUID
+      token: REPLACE_ME_RUNNER_TOKEN
+
+container:
+  # host-mode jobs already share this container's filesystem and tools.
+  # The docker socket itself is mounted at /var/run/docker.sock by compose.
+  # Automount also makes it available if a container-type label is added later.
+  docker_host: automount

@@ -1,0 +1,66 @@
+# Local-only GitOps stack: Forgejo (Git + built-in OCI registry) + Forgejo Runner.
+# Everything runs on THIS machine via Docker Desktop. No cloud, no K3s, no Argo CD.
+#
+# Usage: see LOCAL-GUIDE.md. Quick start:
+#   1) cp local/.env.example local/.env
+#   2) docker compose -f local/docker-compose.yml up -d --build forgejo
+#   3) Open http://localhost:3000, finish setup, create a repo, then
+#      Settings -> Actions -> Runners -> Create new runner: copy UUID + token
+#      into local/runner-config.yml (server.connections.forgejo section).
+#   4) docker compose -f local/docker-compose.yml up -d --build
+#
+# Ports on localhost:
+#   3000  Forgejo web UI + git HTTP + OCI registry (/v2/...)
+#   8080  deployed task board (app stack, brought up by CD)
+
+services:
+  forgejo:
+    image: codeberg.org/forgejo/forgejo:17.0.1
+    container_name: twf-forgejo
+    restart: unless-stopped
+    environment:
+      # SQLite = zero external DB, simplest possible local setup.
+      - FORGEJO__database__DB_TYPE=sqlite3
+      - FORGEJO__server__ROOT_URL=http://localhost:3000/
+      - FORGEJO__server__DOMAIN=localhost
+      - FORGEJO__server__HTTP_PORT=3000
+      - FORGEJO__server__DISABLE_SSH=true
+      # Actions + package registry are on by default in v1.21+, pinned for clarity.
+      - FORGEJO__actions__ENABLED=true
+      - FORGEJO__packages__ENABLED=true
+      - FORGEJO__service__DISABLE_REGISTRATION=${DISABLE_REGISTRATION:-true}
+      - USER_UID=1000
+      - USER_GID=1000
+    ports:
+      - "3000:3000"
+    volumes:
+      - forgejo-data:/data
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:3000/api/healthz"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+
+  runner:
+    build:
+      context: ./runner-image
+    image: twf-forgejo-runner:local
+    container_name: twf-runner
+    restart: unless-stopped
+    # Local trusted container: root guarantees access to the mounted host
+    # docker.sock on Docker Desktop (the default uid 1000 often cannot).
+    user: root
+    depends_on:
+      forgejo:
+        condition: service_healthy
+    volumes:
+      # Job steps run in host mode inside this container; this socket lets
+      # them call `docker build` / `docker compose` on the host daemon.
+      - /var/run/docker.sock:/var/run/docker.sock
+      - runner-data:/data
+      # Registration (uuid + token) + host-mode label + capacity live here.
+      - ./runner-config.yml:/data/config.yml:ro
+
+volumes:
+  forgejo-data:
+  runner-data:

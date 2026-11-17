@@ -1,0 +1,65 @@
+name: CD
+
+# Local delivery: build web + api images from this checkout, then bring up
+# the app stack on THIS SAME machine with docker compose. No remote registry,
+# no Kubernetes, no Argo CD, no separate deploy repo. The runner has the host
+# docker socket mounted, so `docker build`/`docker compose` operate on the
+# local daemon and the site is live at http://localhost:8080.
+#
+# This is a deliberately minimal GitOps-style loop: Git is still the source
+# of truth and a push drives the deploy, but reconciliation is the CD job
+# itself rather than a cluster controller. See LOCAL-GUIDE.md for how to
+# upgrade to a real pull-based GitOps controller (Flux) later.
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: cd-local
+  # Never cancel an in-flight deploy halfway through.
+  cancel-in-progress: false
+
+env:
+  HUSKY: 0
+  CI: true
+
+jobs:
+  deploy-local:
+    name: Build images · deploy to localhost:8080
+    runs-on: local
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # The checked-out workspace is bind-mounted into the runner container's
+      # filesystem. Build directly from it; images land in the local daemon.
+      - name: Build web image
+        run: docker build -f ./deploy/Dockerfile -t template-web-fullstack-web:latest .
+
+      - name: Build api image
+        run: docker build -f ./deploy/Dockerfile.api -t template-web-fullstack-api:latest .
+
+      # deploy/docker-compose.yml normally uses `build:` from source. Here we
+      # override compose to use the images we just built by pointing it at the
+      # local deploy file that references them by tag (local/deploy.images.yml).
+      # This keeps a single source of truth for the runtime topology (ports,
+      # volumes, healthchecks, nginx proxy) shared with local development.
+      - name: Deploy app stack
+        run: |
+          set -euo pipefail
+          docker compose -f local/deploy.images.yml down --remove-orphans || true
+          docker compose -f local/deploy.images.yml up -d
+          echo "Waiting for the task board to become healthy..."
+          for i in $(seq 1 30); do
+            if curl -fsS http://localhost:8080/health >/dev/null 2>&1; then
+              echo "Task board is up at http://localhost:8080"
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "::error::App did not become healthy in time"
+          docker compose -f local/deploy.images.yml ps
+          docker compose -f local/deploy.images.yml logs --tail=50
+          exit 1

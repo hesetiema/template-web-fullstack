@@ -1,11 +1,10 @@
 # template-web-fullstack
 
-全栈 Web **应用模板**：**Vue 3 + Vite 前端** + **Fastify + TypeScript API** + PostgreSQL，覆盖工程化、测试、容器化到 Gitea + Argo CD 的 GitOps 交付链路。
+全栈 Web **应用模板**：**Vue 3 + Vite 前端** + **Fastify + TypeScript API** + PostgreSQL，覆盖工程化、测试、容器化，并内置一条**本机即可跑通的 Git 驱动交付链路**（Forgejo + Forgejo Actions + Docker Compose）。
 
-已包含一个可运行的**任务看板**（增删改查 + 数据落库），既是可交付的最小应用，也是验证整条工具链的样例。`apps/web`（SPA）与 `apps/api`（Node 服务）独立构建、独立镜像、独立扩缩容。
+已包含一个可运行的**任务看板**（增删改查 + 数据落库），既是可交付的最小应用，也是验证整条工具链的样例。`apps/web`（SPA）与 `apps/api`（Node 服务）独立构建、独立镜像。
 
-> **当前阶段**：代码仓 + CI/CD 工作流 + 独立部署仓骨架已就绪。集群尚未接入——端到端 GitOps 的最后一步（Argo CD → K8s）按需要后续完成。
-> 在 Gitea 上跑通 CI/CD 的完整配置步骤见 **[GITEA-GUIDE.md](./GITEA-GUIDE.md)**。
+> **当前方案**：本机最简交付 —— 一台装了 Docker Desktop 的机器即可，无需云服务器、无需 K8s、无需公司内网。完整操作步骤见 **[LOCAL-GUIDE.md](./LOCAL-GUIDE.md)**。
 
 ## 技术栈与版本基线
 
@@ -22,22 +21,23 @@
 | 代码规范 | ESLint 9（flat config）、Prettier 3、typescript-eslint 8、eslint-plugin-vue 10 | — |
 | Git 流程 | Husky 9（hook 为纯 shell，无 shebang）、lint-staged 16、commitlint 20（Conventional Commits） | — |
 | 测试 | Vitest 3（web: jsdom + @vue/test-utils；api: node + app.inject）、Playwright 1.58 | — |
-| CI/CD | Gitea Actions（`.gitea/workflows/`，兼容 GitHub Actions 语法） | Gitea 1.22+ |
-| 交付 | Docker 多阶段 + nginx-unprivileged、K8s、Argo CD（双仓 GitOps，双镜像） | — |
+| CI/CD | Forgejo Actions（`.forgejo/workflows/`，兼容 GitHub Actions 语法，用 `forgejo.*` context） | Forgejo 1.21+ |
+| 本机交付 | Forgejo 17.0.1（Git + 内置 Registry）+ Forgejo Runner 13（自构建镜像）+ Docker Compose | — |
 
 > TS 配置文件（`eslint.config.ts` / `prettier.config.ts` / `commitlint.config.ts`）依赖 `jiti` 加载，已列入根 `devDependencies`。
-> `npm` 用户可将 config 改为 `.mjs`；本模板默认 pnpm。
+> `pnpm-lock.yaml` 已提交，CI 与 Docker 构建使用 `--frozen-lockfile`，可复现。
 
 ## 目录结构
 
 ```
 .
 ├── package.json / pnpm-workspace.yaml / turbo.json   # 根：脚本、workspace、任务编排
+├── pnpm-lock.yaml                                    # 已提交，保证可复现安装
 ├── tsconfig.base.json                                # 共享 TS 严格配置
 ├── eslint.config.ts / prettier.config.ts / commitlint.config.ts
 ├── .husky/                                           # pre-commit、commit-msg hooks
 ├── .editorconfig / .nvmrc / .npmrc / .env.example / .gitignore
-├── GITEA-GUIDE.md                                    # Gitea 侧配置全流程指引
+├── LOCAL-GUIDE.md                                    # 本机最简交付全流程指引（先看这个）
 ├── apps/
 │   ├── web/                                          # Vue 3 SPA（任务看板前端）
 │   │   ├── vite.config.ts / vitest.config.ts / playwright.config.ts
@@ -58,79 +58,77 @@
 │   ├── Dockerfile                                    # web: node 构建 → nginx-unprivileged:8080
 │   ├── Dockerfile.api                                # api: node 构建 → node 非 root:3000
 │   ├── nginx.conf                                    # SPA fallback + /api 反向代理 + 安全头
-│   └── docker-compose.yml                            # postgres + api + web 本地全栈
-├── .gitea/workflows/
+│   └── docker-compose.yml                            # postgres + api + web 本地开发栈（源码构建）
+├── .forgejo/workflows/
 │   ├── ci.yml                                        # lint → typecheck → web/api 测试 → build
-│   └── cd.yml                                        # 构建推双镜像到 Gitea Registry → 回写部署仓 tag
-└── deploy-repo/                                      # 独立 GitOps 部署仓骨架（单独推送）
-    ├── README.md                                     # 部署仓职责与初始化步骤
-    ├── argocd/application.yaml                       # Argo CD Application
-    └── k8s/                                          # web + api 全套 + kustomization（双镜像）
+│   └── cd.yml                                        # 本机构建双镜像 → docker compose 部署到 :8080
+└── local/                                            # 本机 GitOps 栈（唯一需要的基础设施）
+    ├── docker-compose.yml                            # Forgejo + Runner（一条命令起）
+    ├── runner-config.yml                             # Runner 注册信息 + host-mode label
+    ├── runner-image/Dockerfile                       # 自带 Node/pnpm/docker 的 Runner 镜像
+    ├── deploy.images.yml                             # CD 部署用的运行时拓扑（镜像版）
+    └── .env.example                                  # 本地环境变量样例
 ```
 
 ## 快速开始
 
+分两种场景：
+
+### A. 只想本地跑起应用（不配 CI/CD）
+
 ```bash
 nvm use                       # Node 22
-corepack enable               # 启用 pnpm
-cp .env.example .env          # 按需修改（本地默认指向 127.0.0.1 的 Postgres）
-pnpm install                  # 安装依赖（prepare 脚本自动装 Husky hooks；首次会生成 pnpm-lock.yaml）
+corepack enable               # 启用 pnpm（pnpm-lock.yaml 已提交）
+pnpm install --frozen-lockfile
 
-# 方式 A：用 Docker 起完整栈（Postgres + API + Web，含自动迁移）
-docker compose -f deploy/docker-compose.yml up --build
+# 用 Docker 起完整栈（Postgres + API + Web，含自动迁移）
+docker compose -f deploy/docker-compose.yml up -d --build
 # 打开 http://localhost:8080，任务看板可直接增删改查，API 经 nginx 的 /api 代理转发
-
-# 方式 B：本地分别运行（需自行准备 Postgres）
-pnpm db:migrate               # 执行 SQL 迁移
-pnpm dev                      # Turbo 并行启动 web(5173) 与 api(3000)
 ```
+
+### B. 想跑通完整交付链路（CI/CD）
+
+按 **[LOCAL-GUIDE.md](./LOCAL-GUIDE.md)** 一步步来：装 Docker Desktop → 起 Forgejo → 建仓 → 配 Runner → push 触发流水线 → 浏览器验收。
 
 常用脚本（根 `package.json`，经 Turbo 编排）：`dev` · `build` · `lint` · `lint:fix` · `format` · `format:check` · `typecheck` · `test` · `test:e2e` · `db:migrate` · `check`。
 
 ## 应用与测试要点
 
 - **任务看板 API**：`GET /api/tasks` 列表、`POST /api/tasks` 新建、`PATCH /api/tasks/:id` 切换完成/改名、`DELETE /api/tasks/:id` 删除；Zod 校验输入，缺失资源返回 404。
-- **探针分层**：`/health`（liveness）只回答进程存活，绝不查依赖；`/ready`（readiness）检查数据库，不可达返回 503。K8s 中 DB 故障只摘流量，不触发无谓重启。
+- **探针分层**：`/health`（liveness）只回答进程存活，绝不查依赖；`/ready`（readiness）检查数据库，不可达返回 503。
 - **可测试性**：`buildApp({ env, tasks, checkReady })` 返回 Fastify 实例但不监听端口；测试通过 `app.inject()` 注入假仓储，无需真实数据库。
 - **配置校验**：`parseEnv()` 用 Zod 在启动时校验 `DATABASE_URL` 等，配置错误立即失败。
-- **迁移**：`apps/api/migrations/*.sql` 按顺序执行并记录到 `schema_migrations`，支持重入；Compose 与 K8s initContainer 都会在启动 API 前先跑迁移。
+- **迁移**：`apps/api/migrations/*.sql` 按顺序执行并记录到 `schema_migrations`，支持重入；Compose 启动 API 前会先跑迁移。
 
-## 交付链路（双仓 GitOps，Gitea）
+## 交付链路（本机最简，Forgejo Actions）
 
 ```
-开发者 push 代码仓 main
-  └─ Gitea Actions CI: lint → typecheck → web/api 单测 → build
-  └─ Gitea Actions CD: 构建 web + api 双镜像 → 推到 gitea.meos.center/<owner>/...
-         → clone 部署仓 → sed 回写 k8s/kustomization.yaml 两个 newTag → commit/push
-                → Argo CD 检测部署仓变更 → 自动同步（prune + selfHeal）→ K8s
+git push 代码仓 main（本机 Forgejo:3000）
+  └─ Forgejo Actions CI: lint → typecheck → web/api 单测 → build
+  └─ Forgejo Actions CD: docker build web + api 双镜像
+         → docker compose -f local/deploy.images.yml up -d
+         → 健康检查通过 → http://localhost:8080 可访问
 ```
 
-- **双仓分离**：代码仓只放源码与 workflow；部署仓（骨架见 `deploy-repo/`）只放 manifests。Argo CD 只盯部署仓，CD 从不直接 `kubectl` 操作集群。
-- **镜像 tag**：同一次提交的两个镜像用同一个 short-SHA，回写时一次替换所有 `newTag`，保持 web/api 版本一致。
-- **回滚**：`git revert` 部署仓那次 tag 回写提交，Argo CD 同步回旧镜像；旧镜像保留在 Gitea Registry。
-- **发布策略**：web 与 api 均滚动更新（`maxSurge: 1` / `maxUnavailable: 0`）+ 就绪探针；各自配 HPA 与 PDB。
-- **流量入口**：Ingress `/` → web Service(80)；`/api`、`/api/` → api Service(3000)。
-
-完整的 Gitea 配置（建仓、PAT、runner、secrets）见 **[GITEA-GUIDE.md](./GITEA-GUIDE.md)**；部署仓初始化见 **[deploy-repo/README.md](./deploy-repo/README.md)**。
+- **单仓**：代码与工作流在一个仓库，无需独立部署仓。
+- **Git 驱动**：Git 是唯一事实来源，push 驱动部署；调和由 CD 任务完成（非集群控制器）。
+- **镜像**：默认只留在本机 Docker daemon（tag `template-web-fullstack-{web,api}:latest`），不依赖公网 registry；Forgejo 内置 Registry 已开启，可按需启用远程推送。
+- **回滚**：`git revert` 触发重新构建并部署旧版本；或用 `docker compose` 切换到保留的旧镜像 tag。
+- **升级路径**：想升级到真正的 pull 式 GitOps（K3s + Flux + 独立部署仓 + 镜像 tag 自动回写），见 LOCAL-GUIDE.md 末节。
 
 ## 拷入项目前必须替换的占位符
 
 | 位置 | 占位符 | 说明 |
 |---|---|---|
+| `local/runner-config.yml` | `REPLACE_ME_RUNNER_UUID` / `REPLACE_ME_RUNNER_TOKEN` | 从 Forgejo 网页 Runner 注册信息复制 |
+| `local/docker-compose.yml` | `ROOT_URL=http://localhost:3000/`、`DISABLE_REGISTRATION` | 如需改域名/开放注册 |
 | `apps/api/src/env.ts` | `DATABASE_URL` 校验 | 按你的数据库地址调整 |
-| `deploy-repo/k8s/api-secret.yaml` | `postgres://REPLACE_ME...` | 生产改用 Sealed Secrets / ESO，勿提交明文 |
-| `deploy-repo/k8s/api-configmap.yaml` | `CORS_ORIGIN` 域名 | 改为真实前端域名 |
-| `deploy-repo/k8s/{deployment,api-deployment,kustomization}.yaml` | `gitea.meos.center/your-org/...` | 真实 owner/repo，须与代码仓的 `gitea.repository` 一致 |
-| `deploy-repo/k8s/ingress.yaml` | `web.example.com`、`letsencrypt-prod` | 域名与 cert-manager ClusterIssuer |
-| `deploy-repo/argocd/application.yaml` | `repoURL` | 部署仓真实 Gitea 地址 |
-| `.gitea/workflows/cd.yml` / 代码仓 Actions Variables | `DEPLOY_REPO`、`GITEA_TOKEN` | 见 GITEA-GUIDE.md |
+| `local/deploy.images.yml` | `postgres` / `postgres`、`CORS_ORIGIN` | 本机默认值，生产务必改强密码与真实域名 |
 
 ## 前置条件与注意事项
 
-- **锁文件**：Dockerfile 与 CI 用 `pnpm install --frozen-lockfile`，首次需本地 `pnpm install` 生成并提交 `pnpm-lock.yaml`，否则构建失败。
+- **锁文件**：`pnpm-lock.yaml` 已提交，CI 与 Docker 构建用 `--frozen-lockfile`；改动依赖后须更新并提交锁文件。
 - **CI 中的 Husky**：工作流已设 `HUSKY=0`，避免 `prepare` 在 CI 里安装 hooks。
-- **kustomization 位置**：必须在部署仓 `k8s/` 内（kustomize 不允许 `resources` 引用父目录之外的文件），Argo CD `source.path` 指向 `k8s`。
-- **非 root 容器**：web nginx 监听 8080、api 监听 3000；只读根文件系统下分别为可写路径挂载 `emptyDir`。
-- **数据库**：模板未包含生产 Postgres 工作负载（生产多用托管数据库或独立 StatefulSet/Operator）；Compose 中的 db 仅供本地开发。
-- **密钥**：切勿把真实 secret 写进镜像或 Git；K8s Secret 仅 base64 编码，不等于加密。
-- **Runner 依赖 Docker**：Gitea Actions 的 job 用 Docker 构建镜像，runner 必须部署在有 Docker 的机器上（详见 GITEA-GUIDE.md）。
+- **本机基础设施**：需 Docker Desktop（WSL2 后端）；8GB 内存可跑，构建时建议关停其他重程序，详见 LOCAL-GUIDE.md。
+- **Runner 镜像**：`local/runner-image/Dockerfile` 从官方 runner 镜像取二进制放到 node:22-bookworm，内置 Node/pnpm/git/Docker CLI/Compose；`host` 模式执行 job，避免每个 job 另拉镜像。
+- **安全**：本机方案为可信环境优化——runner 容器以 root 运行并挂载宿主 docker.sock，等价于拿到宿主机 root；仅在个人本机使用，勿在生产这样做。真实 secret 不要写进镜像或 Git。

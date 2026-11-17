@@ -1,0 +1,71 @@
+# Runtime topology for the CD-built images on this machine.
+# Same ports/volumes/proxy as deploy/docker-compose.yml, but references the
+# images built by .forgejo/workflows/cd.yml instead of building from source.
+# Started/stopped by the CD job with `docker compose -f local/deploy.images.yml`.
+
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: twf-db
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: template_web
+    volumes:
+      - twf-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d template_web"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  api:
+    image: template-web-fullstack-api:latest
+    container_name: twf-api
+    environment:
+      NODE_ENV: production
+      PORT: "3000"
+      DATABASE_URL: postgres://postgres:postgres@db:5432/template_web
+      LOG_LEVEL: info
+      CORS_ORIGIN: http://localhost:8080
+      APP_VERSION: local
+      MIGRATIONS_DIR: /app/migrations
+    # Apply migrations before serving (built image's default CMD skips this).
+    command: sh -c "node dist/migrate.js && node dist/server.js"
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    tmpfs:
+      - /tmp
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:3000/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+
+  web:
+    image: template-web-fullstack-web:latest
+    container_name: twf-web
+    ports:
+      - "8080:8080"
+    depends_on:
+      api:
+        condition: service_healthy
+    restart: unless-stopped
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    tmpfs:
+      - /var/cache/nginx
+      - /tmp
+
+volumes:
+  twf-pgdata:

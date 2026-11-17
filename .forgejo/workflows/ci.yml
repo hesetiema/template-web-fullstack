@@ -1,0 +1,54 @@
+name: CI
+
+# Forgejo Actions. Workflows live in .forgejo/workflows/ (not .github).
+# `forgejo.*` is the context; `github.*` is a compatibility alias.
+# runs-on: local -> the runner label declared as `local:host` in
+# local/runner-config.yml. Host mode means jobs run inside the runner
+# container, which already has Node 22 + pnpm + git + docker preinstalled.
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ forgejo.ref }}
+  cancel-in-progress: true
+
+env:
+  HUSKY: 0
+  CI: true
+
+jobs:
+  quality:
+    name: Lint · Typecheck · Test · Build
+    runs-on: local
+    steps:
+      # Forgejo resolves `actions/checkout` via DEFAULT_ACTIONS_URL
+      # (https://data.forgejo.org by default) — no full URL needed.
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # pnpm is preinstalled in the runner image; corepack enable makes the
+      # shim available on PATH in a fresh shell.
+      - name: Enable pnpm
+        run: corepack enable
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Lint
+        run: pnpm lint
+
+      - name: Typecheck
+        run: pnpm typecheck
+
+      - name: Web unit tests
+        run: pnpm --filter @template/web test:coverage
+
+      - name: API unit tests
+        run: pnpm --filter @template/api test:coverage
+
+      - name: Build both apps
+        run: pnpm build
